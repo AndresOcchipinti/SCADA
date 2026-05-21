@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monitor de Consumo Eléctrico</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f0f2f5; --surface: #ffffff; --border: #e4e7ec;
+  --text: #111827; --muted: #6b7280; --accent: #2563eb;
+  --green: #16a34a; --green-lt: #dcfce7;
+  --yellow: #d97706; --yellow-lt: #fef3c7;
+  --red: #dc2626; --red-lt: #fee2e2;
+  --r: 12px; --sh: 0 1px 3px rgba(0,0,0,.06), 0 4px 14px rgba(0,0,0,.05);
+}
+body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+/* HEADER */
+header {
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 14px 28px; display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 50;
+}
+.hb { display: flex; align-items: center; gap: 12px; }
+.hb-ico {
+  width: 38px; height: 38px; background: var(--accent);
+  border-radius: 10px; display: flex; align-items: center; justify-content: center;
+}
+.hb-ico svg { width: 20px; height: 20px; stroke: #fff; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.hb-name { font-size: 16px; font-weight: 600; }
+.hb-sub  { font-size: 11px; color: var(--muted); margin-top: 1px; }
+.hr { display: flex; align-items: center; gap: 14px; }
+.live-pill {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--green-lt); color: var(--green);
+  font-size: 11px; font-weight: 600; padding: 4px 12px; border-radius: 20px;
+}
+.live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 1.8s infinite; }
+@keyframes pulse { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(2);opacity:.3} }
+#clock { font-family: 'DM Mono', monospace; font-size: 13px; color: var(--muted); }
+
+/* LAYOUT */
+main { max-width: 1020px; margin: 0 auto; padding: 22px 16px 48px; display: flex; flex-direction: column; gap: 16px; }
+
+/* SEMÁFORO */
+.sem-banner {
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: var(--r); box-shadow: var(--sh);
+  padding: 18px 22px; display: flex; align-items: center; gap: 20px;
+  transition: border-color .4s, background .4s;
+}
+.sem-banner.st-green  { border-color: #86efac; background: #f0fdf4; }
+.sem-banner.st-yellow { border-color: #fcd34d; background: #fffbeb; }
+.sem-banner.st-red    { border-color: #fca5a5; background: #fff5f5; }
+.semaforo {
+  display: flex; flex-direction: column; gap: 7px;
+  background: #1a1f2e; border-radius: 12px;
+  padding: 11px 9px; align-items: center; flex-shrink: 0;
+}
+.led { width: 20px; height: 20px; border-radius: 50%; transition: background .5s, box-shadow .5s; }
+.led-r-off { background: #3a1a1a; } .led-y-off { background: #2e2510; } .led-g-off { background: #0e2a14; }
+.led-r-on  { background: #ef4444; box-shadow: 0 0 8px #ef4444, 0 0 20px rgba(239,68,68,.45); }
+.led-y-on  { background: #f59e0b; box-shadow: 0 0 8px #f59e0b, 0 0 20px rgba(245,158,11,.45); }
+.led-g-on  { background: #22c55e; box-shadow: 0 0 8px #22c55e, 0 0 20px rgba(34,197,94,.45); }
+.sem-info { flex: 1; }
+.sem-titulo { font-size: 20px; font-weight: 600; transition: color .4s; }
+.sem-desc   { font-size: 13px; color: var(--muted); margin-top: 4px; line-height: 1.5; }
+.c-green  { color: var(--green); } .c-yellow { color: var(--yellow); } .c-red { color: var(--red); }
+.sem-vals { display: flex; gap: 28px; flex-shrink: 0; }
+.sv-item  { text-align: right; }
+.sv-lbl   { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 2px; }
+.sv-num   { font-family: 'DM Mono', monospace; font-size: 24px; font-weight: 500; }
+.sv-unit  { font-size: 12px; color: var(--muted); margin-left: 2px; }
+
+/* GRIDS */
+.row-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
+.row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+/* METRIC CARD */
+.mcard {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); box-shadow: var(--sh);
+  padding: 18px 18px 16px; display: flex; flex-direction: column; gap: 4px;
+  position: relative; overflow: hidden;
+}
+.mcard::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  border-radius: var(--r) var(--r) 0 0;
+}
+.mc-blue::before   { background: #2563eb; } .mc-teal::before   { background: #0d9488; }
+.mc-violet::before { background: #7c3aed; } .mc-orange::before { background: #ea580c; }
+.mc-green::before  { background: #16a34a; } .mc-pink::before   { background: #db2777; }
+.mc-sky::before    { background: #0284c7; } .mc-amber::before  { background: #d97706; }
+.mc-ico { position: absolute; top: 14px; right: 14px; font-size: 22px; opacity: .1; }
+.mc-lbl  { font-size: 11px; color: var(--muted); font-weight: 500; letter-spacing: .02em; }
+.mc-val  { font-family: 'DM Mono', monospace; font-size: 30px; font-weight: 500; color: var(--text); line-height: 1.05; }
+.mc-unit { font-size: 13px; color: var(--muted); margin-left: 2px; }
+.mc-sub  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.mc-bar  { margin-top: 10px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.mc-fill { height: 100%; border-radius: 2px; transition: width 1.2s ease; }
+
+/* CARD */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); box-shadow: var(--sh); padding: 20px 22px; }
+.card-hdr { font-size: 10px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
+
+/* CHART */
+.chart-wrap { position: relative; height: 175px; }
+
+/* CONSUMO LAYOUT */
+.consumo-wrap { display: grid; grid-template-columns: 1fr 300px; gap: 16px; }
+
+/* HOY BOX */
+.hoy-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); box-shadow: var(--sh); padding: 20px 22px; }
+.hoy-top { display: flex; align-items: flex-end; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+.hoy-main { flex: 1; }
+.hoy-lbl  { font-size: 10px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 4px; }
+.hoy-kwh  { font-family: 'DM Mono', monospace; font-size: 50px; font-weight: 500; line-height: 1; }
+.hoy-unit { font-size: 20px; color: var(--muted); }
+.hoy-est  { font-size: 12px; color: var(--muted); margin-top: 5px; }
+.hoy-est b { color: var(--accent); font-weight: 600; }
+.hoy-peso { text-align: right; flex-shrink: 0; }
+.hp-lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 3px; }
+.hp-val { font-family: 'DM Mono', monospace; font-size: 28px; font-weight: 500; color: var(--text); }
+.hp-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+/* MONTH LIST */
+.ml-header { display: grid; grid-template-columns: 1fr 80px 100px; gap: 0 6px; padding: 0 10px; margin-bottom: 4px; }
+.ml-header span { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; }
+.ml-header span:not(:first-child) { text-align: right; }
+.month-list { display: flex; flex-direction: column; gap: 1px; }
+.month-row { display: grid; grid-template-columns: 1fr 80px 100px; gap: 0 6px; align-items: center; padding: 7px 10px; border-radius: 8px; transition: background .15s; }
+.month-row:hover { background: var(--bg); }
+.month-row.actual { background: #eff6ff; }
+.mr-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--border); margin-right: 8px; flex-shrink: 0; }
+.month-row.actual .mr-dot { background: var(--accent); }
+.mr-nombre { font-size: 13px; color: var(--muted); display: flex; align-items: center; }
+.month-row.actual .mr-nombre { font-weight: 600; color: var(--accent); }
+.mr-kwh  { font-family: 'DM Mono', monospace; font-size: 13px; text-align: right; color: var(--text); }
+.mr-peso { font-family: 'DM Mono', monospace; font-size: 12px; text-align: right; color: var(--muted); }
+.month-row.actual .mr-kwh  { color: var(--accent); font-weight: 600; }
+.month-row.actual .mr-peso { color: var(--accent); }
+.total-row { display: grid; grid-template-columns: 1fr 80px 100px; gap: 0 6px; align-items: center; padding: 12px 10px 4px; border-top: 1px solid var(--border); margin-top: 8px; }
+.total-lbl  { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.total-kwh  { font-family: 'DM Mono', monospace; font-size: 14px; font-weight: 700; text-align: right; }
+.total-peso { font-family: 'DM Mono', monospace; font-size: 14px; font-weight: 700; text-align: right; color: var(--accent); }
+
+/* COSTO CARD */
+.costo-card {
+  background: var(--accent); border-radius: var(--r);
+  padding: 22px 20px; color: #fff;
+  display: flex; flex-direction: column;
+  box-shadow: 0 4px 20px rgba(37,99,235,.3);
+}
+.cc-lbl  { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; opacity: .7; margin-bottom: 5px; }
+.cc-val  { font-family: 'DM Mono', monospace; font-size: 38px; font-weight: 500; line-height: 1; }
+.cc-sub  { font-size: 11px; opacity: .65; margin-top: 4px; margin-bottom: 18px; }
+.cc-div  { border-top: 1px solid rgba(255,255,255,.2); padding-top: 16px; display: flex; flex-direction: column; gap: 10px; }
+.cc-row  { display: flex; justify-content: space-between; font-size: 13px; }
+.cc-row span   { opacity: .8; }
+.cc-row strong { font-family: 'DM Mono', monospace; font-weight: 500; }
+.cc-tarifa {
+  margin-top: 16px; border-top: 1px solid rgba(255,255,255,.15);
+  padding-top: 12px; font-size: 10px; opacity: .55; line-height: 1.7;
+}
+
+footer { text-align: center; font-size: 11px; color: var(--muted); padding: 16px; border-top: 1px solid var(--border); background: var(--surface); }
+
+@media (max-width: 720px) {
+  .row-4 { grid-template-columns: repeat(2,1fr); }
+  .consumo-wrap { grid-template-columns: 1fr; }
+  .sem-vals { display: none; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hb">
+    <div class="hb-ico">
+      <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+    </div>
+    <div>
+      <div class="hb-name">Monitor de Consumo Eléctrico</div>
+      <div class="hb-sub">Analizador de red · Medidor inteligente</div>
+    </div>
+  </div>
+  <div class="hr">
+    <div class="live-pill"><div class="live-dot"></div>En vivo</div>
+    <span id="clock">--:--:--</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- SEMÁFORO -->
+  <div class="sem-banner st-green" id="sem-banner">
+    <div class="semaforo">
+      <div class="led led-r-off" id="led-r"></div>
+      <div class="led led-y-off" id="led-y"></div>
+      <div class="led led-g-on"  id="led-g"></div>
+    </div>
+    <div class="sem-info">
+      <div class="sem-titulo c-green" id="sem-titulo">Sistema normal</div>
+      <div class="sem-desc" id="sem-desc">Todos los parámetros dentro del rango correcto. No se requiere ninguna acción.</div>
+    </div>
+    <div class="sem-vals">
+      <div class="sv-item">
+        <div class="sv-lbl">Tensión prom.</div>
+        <div class="sv-num"><span id="sv-v">---</span><span class="sv-unit">V</span></div>
+      </div>
+      <div class="sv-item">
+        <div class="sv-lbl">Corriente</div>
+        <div class="sv-num"><span id="sv-i">---</span><span class="sv-unit">A</span></div>
+      </div>
+      <div class="sv-item">
+        <div class="sv-lbl">Frecuencia</div>
+        <div class="sv-num"><span id="sv-f">---</span><span class="sv-unit">Hz</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- POTENCIAS -->
+  <div class="row-4">
+    <div class="mcard mc-blue">
+      <span class="mc-ico">⚡</span>
+      <div class="mc-lbl">Potencia Activa</div>
+      <div class="mc-val"><span id="m-pa">--</span><span class="mc-unit">kW</span></div>
+      <div class="mc-sub">Energía que realmente consumís</div>
+      <div class="mc-bar"><div class="mc-fill" id="b-pa" style="background:#2563eb;width:0%"></div></div>
+    </div>
+    <div class="mcard mc-violet">
+      <span class="mc-ico">〰</span>
+      <div class="mc-lbl">Potencia Aparente</div>
+      <div class="mc-val"><span id="m-pap">--</span><span class="mc-unit">kVA</span></div>
+      <div class="mc-sub">Carga total sobre la instalación</div>
+      <div class="mc-bar"><div class="mc-fill" id="b-pap" style="background:#7c3aed;width:0%"></div></div>
+    </div>
+    <div class="mcard mc-orange">
+      <span class="mc-ico">↺</span>
+      <div class="mc-lbl">Potencia Reactiva</div>
+      <div class="mc-val"><span id="m-pr">--</span><span class="mc-unit">kVAR</span></div>
+      <div class="mc-sub">Energía no productiva (motores)</div>
+      <div class="mc-bar"><div class="mc-fill" id="b-pr" style="background:#ea580c;width:0%"></div></div>
+    </div>
+    <div class="mcard mc-green">
+      <span class="mc-ico">🔋</span>
+      <div class="mc-lbl">Energía Acumulada</div>
+      <div class="mc-val"><span id="m-ea">--</span><span class="mc-unit">kWh</span></div>
+      <div class="mc-sub" id="m-ea-sub">medidor total</div>
+    </div>
+  </div>
+
+  <!-- PARÁMETROS DE RED -->
+  <div class="row-4">
+    <div class="mcard mc-sky">
+      <span class="mc-ico">〜</span>
+      <div class="mc-lbl">Tensión promedio</div>
+      <div class="mc-val"><span id="m-v">---</span><span class="mc-unit">V</span></div>
+      <div class="mc-sub" id="m-v-s">—</div>
+    </div>
+    <div class="mcard mc-teal">
+      <span class="mc-ico">⇌</span>
+      <div class="mc-lbl">Corriente total</div>
+      <div class="mc-val"><span id="m-i">---</span><span class="mc-unit">A</span></div>
+      <div class="mc-sub" id="m-i-s">—</div>
+    </div>
+    <div class="mcard mc-amber">
+      <span class="mc-ico">≈</span>
+      <div class="mc-lbl">Frecuencia de red</div>
+      <div class="mc-val"><span id="m-f">---</span><span class="mc-unit">Hz</span></div>
+      <div class="mc-sub" id="m-f-s">nominal 50 Hz</div>
+    </div>
+    <div class="mcard mc-pink">
+      <span class="mc-ico">◎</span>
+      <div class="mc-lbl">Factor de potencia</div>
+      <div class="mc-val"><span id="m-fp">---</span></div>
+      <div class="mc-sub" id="m-fp-s">—</div>
+      <div class="mc-bar"><div class="mc-fill" id="b-fp" style="background:#db2777;width:0%"></div></div>
+    </div>
+  </div>
+
+  <!-- GRÁFICA -->
+  <div class="card">
+    <div class="card-hdr">Potencia activa — últimos 60 segundos</div>
+    <div class="chart-wrap">
+      <canvas id="chart-pot"></canvas>
+    </div>
+  </div>
+
+  <!-- CONSUMO + COSTOS -->
+  <div class="consumo-wrap">
+
+    <div class="hoy-box">
+      <div class="card-hdr">Consumo y costo en pesos argentinos</div>
+
+      <!-- HOY -->
+      <div class="hoy-top">
+        <div class="hoy-main">
+          <div class="hoy-lbl">Hoy — <span id="fecha-hoy">--/--</span></div>
+          <div>
+            <span class="hoy-kwh" id="hoy-kwh">--</span>
+            <span class="hoy-unit"> kWh</span>
+          </div>
+          <div class="hoy-est">Estimado al cierre del día: <b id="hoy-est">-- kWh</b></div>
+        </div>
+        <div class="hoy-peso">
+          <div class="hp-lbl">Costo hoy</div>
+          <div class="hp-val" id="hoy-pesos">$--</div>
+          <div class="hp-sub" id="hoy-est-pesos">est. $-- al cierre</div>
+        </div>
+      </div>
+
+      <!-- LISTA MESES -->
+      <div class="ml-header">
+        <span>Mes</span><span style="text-align:right">kWh</span><span style="text-align:right">Pesos</span>
+      </div>
+      <div class="month-list" id="month-list"></div>
+
+      <div class="total-row">
+        <span class="total-lbl">Total año</span>
+        <span class="total-kwh" id="total-kwh">--</span>
+        <span class="total-peso" id="total-pesos">$--</span>
+      </div>
+    </div>
+
+    <!-- COSTO CARD -->
+    <div class="costo-card">
+      <div class="cc-lbl">Costo estimado este mes</div>
+      <div class="cc-val" id="cc-mes">$--</div>
+      <div class="cc-sub" id="cc-mes-sub">-- kWh acumulados</div>
+
+      <div class="cc-div">
+        <div class="cc-row"><span>Costo de hoy</span><strong id="cc-hoy">$--</strong></div>
+        <div class="cc-row"><span>Acumulado del mes</span><strong id="cc-acum">$--</strong></div>
+        <div class="cc-row"><span>Proyección fin de mes</span><strong id="cc-proj">$--</strong></div>
+        <div class="cc-row"><span>Factor de potencia</span><strong id="cc-fp">---</strong></div>
+      </div>
+
+      <div class="cc-tarifa">
+        Tarifa BT3 residencial · EDESUR / EDENOR<br>
+        Cargo energía: $<span id="tar-val">142.5</span>/kWh + impuestos y cargo fijo<br>
+        Referencia tarifaria: <span id="tar-fecha">Ene 2025</span>
+      </div>
+    </div>
+
+  </div>
+
+</main>
+
+<footer>Monitor de Consumo Eléctrico · Analizador de red · Datos simulados · Actualización cada 1 s</footer>
+
+<script>
+/* ── TARIFA ── */
+const TARIFA_KWH = 142.5;   // $/kWh cargo energía BT3
+const IMPUESTOS  = 1.32;    // IVA + tasas municipales + otros ≈ 32%
+const CARGO_FIJO = 4800;    // cargo fijo mensual estimado
+
+function pesosVar(kwh)  { return kwh * TARIFA_KWH * IMPUESTOS; }
+function pesosMes(kwh)  { return pesosVar(kwh) + CARGO_FIJO; }
+function fmt$(v)        { return '$' + Math.round(v).toLocaleString('es-AR'); }
+
+/* ── DATOS HISTÓRICOS ── */
+const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+               'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+// kWh mensuales simulados (realistas para hogar/pequeño comercio ~5 kW contratados)
+const HIST_KWH = [385,345,295,260,305,390,425,415,330,275,290,360];
+
+const now0       = new Date();
+const MES_ACT    = now0.getMonth();
+const DIA_MES    = now0.getDate();
+const DIAS_MES   = new Date(now0.getFullYear(), MES_ACT+1, 0).getDate();
+const KWH_HASTA_AYER = HIST_KWH[MES_ACT] * ((DIA_MES - 1) / DIAS_MES);
+
+/* ── ESTADO ── */
+let accKwhHoy   = 8.7;      // ya lleva algo el día de hoy
+let accKwhTotal = 13240;    // medidor total acumulado
+
+/* ── CHART ── */
+const N = 60;
+const xlbls = Array.from({length:N},(_,i)=>i===0?'-60s':i===30?'-30s':i===N-1?'ahora':'');
+let bufPot = Array.from({length:N},()=>+(5.2+(Math.random()-.5)*1.5).toFixed(2));
+
+const chartPot = new Chart(document.getElementById('chart-pot'),{
+  type:'line',
+  data:{ labels:xlbls, datasets:[{
+    label:'kW', data:bufPot,
+    borderColor:'#2563eb', backgroundColor:'rgba(37,99,235,.06)',
+    fill:true, tension:0.35, borderWidth:2, pointRadius:0
+  }]},
+  options:{
+    responsive:true, maintainAspectRatio:false, animation:false,
+    plugins:{ legend:{display:false}, tooltip:{
+      backgroundColor:'#1e293b', borderColor:'#334155', borderWidth:1,
+      titleColor:'#64748b', bodyColor:'#e2e8f0',
+      callbacks:{ label: c=>' '+c.parsed.y.toFixed(2)+' kW' }
+    }},
+    scales:{
+      x:{ ticks:{color:'#9ca3af',font:{size:10}}, grid:{color:'#f3f4f6'}, border:{color:'#e4e7ec'} },
+      y:{ ticks:{color:'#9ca3af',font:{size:10},callback:v=>v+' kW'}, grid:{color:'#f3f4f6'}, border:{color:'#e4e7ec'} }
+    },
+    elements:{ point:{radius:0}, line:{tension:0.35, borderWidth:2} }
+  }
+});
+
+/* ── SEMÁFORO ── */
+function setSem(estado) {
+  const ban  = document.getElementById('sem-banner');
+  const tit  = document.getElementById('sem-titulo');
+  const desc = document.getElementById('sem-desc');
+  document.getElementById('led-r').className = 'led led-r-off';
+  document.getElementById('led-y').className = 'led led-y-off';
+  document.getElementById('led-g').className = 'led led-g-off';
+  ban.className = 'sem-banner';
+  if (estado === 'green') {
+    document.getElementById('led-g').className = 'led led-g-on';
+    ban.classList.add('st-green');
+    tit.textContent = 'Sistema normal';
+    tit.className = 'sem-titulo c-green';
+    desc.textContent = 'Todos los parámetros dentro del rango correcto. No se requiere ninguna acción.';
+  } else if (estado === 'yellow') {
+    document.getElementById('led-y').className = 'led led-y-on';
+    ban.classList.add('st-yellow');
+    tit.textContent = 'Atención — revisá un parámetro';
+    tit.className = 'sem-titulo c-yellow';
+    desc.textContent = 'Hay un valor fuera del rango ideal. El sistema funciona, pero conviene verificar.';
+  } else {
+    document.getElementById('led-r').className = 'led led-r-on';
+    ban.classList.add('st-red');
+    tit.textContent = '¡Alerta! — condición anormal';
+    tit.className = 'sem-titulo c-red';
+    desc.textContent = 'Se detectó una condición fuera del límite permitido. Revisá la instalación a la brevedad.';
+  }
+}
+
+/* ── LISTA MESES ── */
+function renderMeses(kwhHoy) {
+  const lista = document.getElementById('month-list');
+  lista.innerHTML = '';
+  let totKwh = 0, totPesos = 0;
+
+  for (let m = 0; m <= MES_ACT; m++) {
+    const actual = m === MES_ACT;
+    const kwh    = actual ? KWH_HASTA_AYER + kwhHoy : HIST_KWH[m];
+    const pesos  = actual ? pesosMes(kwh) : pesosMes(kwh);
+    totKwh  += kwh;
+    totPesos += pesos;
+
+    const row = document.createElement('div');
+    row.className = 'month-row' + (actual ? ' actual' : '');
+    row.innerHTML =
+      `<div class="mr-nombre"><span class="mr-dot"></span>${MESES[m]}${actual ? ' <small style="font-size:10px;opacity:.7">en curso</small>' : ''}</div>` +
+      `<div class="mr-kwh">${kwh.toFixed(1)}</div>` +
+      `<div class="mr-peso">${fmt$(pesos)}</div>`;
+    lista.appendChild(row);
+  }
+  document.getElementById('total-kwh').textContent  = totKwh.toFixed(0) + ' kWh';
+  document.getElementById('total-pesos').textContent = fmt$(totPesos);
+}
+
+/* ── SET TEXT ── */
+function st(id, v) { const e = document.getElementById(id); if(e) e.textContent = v; }
+
+/* ── TICK ── */
+function tick() {
+  const now = new Date();
+  st('clock', now.toTimeString().slice(0,8));
+
+  const hora = now.getHours();
+  const curva = hora < 6 ? 0.35 : hora < 9 ? 0.7 : hora < 13 ? 1.0 : hora < 16 ? 0.85 : hora < 22 ? 1.0 : 0.45;
+  const kw   = Math.max(0.1, +(5.2 * curva + (Math.random()-.5)*1.8).toFixed(2));
+  const fp   = +(0.89 + (Math.random()-.5)*.09).toFixed(2);
+  const kva  = +(kw / Math.max(fp, 0.01)).toFixed(2);
+  const kvar = +(Math.sqrt(Math.max(0, kva**2 - kw**2))).toFixed(2);
+  const v    = +(220 + (Math.random()-.5)*8).toFixed(1);
+  const i    = +(kva * 1000 / (v * 1.732)).toFixed(1);
+  const f    = +(50 + (Math.random()-.5)*.35).toFixed(2);
+
+  accKwhHoy   += kw / 3600;
+  accKwhTotal += kw / 3600;
+
+  const horasTransc = hora + now.getMinutes()/60 + now.getSeconds()/3600;
+  const estFin      = horasTransc > 0.05 ? (accKwhHoy / horasTransc) * 24 : accKwhHoy * 24;
+  const kwhMesAhora = KWH_HASTA_AYER + accKwhHoy;
+  const diasRest    = DIAS_MES - DIA_MES;
+  const kwhProy     = kwhMesAhora + (accKwhHoy / Math.max(horasTransc/24,0.01)) * diasRest;
+
+  const pesosHoy    = pesosVar(accKwhHoy);
+  const pesosEstFin = pesosVar(estFin);
+  const pesosMesAhora = pesosMes(kwhMesAhora);
+  const pesosProyMes  = pesosMes(kwhProy);
+
+  /* semáforo */
+  const vFuera = v < 207 || v > 233;
+  const fFuera = f < 49.5 || f > 50.5;
+  const iAlta  = i > 45;
+  const fpBajo = fp < 0.80;
+  if (fpBajo || vFuera) setSem('red');
+  else if (fFuera || iAlta || fp < 0.85) setSem('yellow');
+  else setSem('green');
+
+  /* semáforo valores */
+  st('sv-v', v.toFixed(0));
+  st('sv-i', i.toFixed(1));
+  st('sv-f', f.toFixed(2));
+
+  /* potencias */
+  st('m-pa',  kw.toFixed(2));
+  st('m-pap', kva.toFixed(2));
+  st('m-pr',  kvar.toFixed(2));
+  st('m-ea',  accKwhTotal.toFixed(1));
+  st('m-ea-sub', 'total medidor: '+accKwhTotal.toFixed(0)+' kWh');
+  document.getElementById('b-pa').style.width  = Math.min(100,kw/12*100).toFixed(0)+'%';
+  document.getElementById('b-pap').style.width = Math.min(100,kva/12*100).toFixed(0)+'%';
+  document.getElementById('b-pr').style.width  = Math.min(100,kvar/6*100).toFixed(0)+'%';
+
+  /* red */
+  st('m-v', v.toFixed(1));
+  st('m-v-s', v<207?'⚠ tensión baja':v>233?'⚠ tensión alta':'✓ tensión normal (207–233 V)');
+  st('m-i', i.toFixed(1));
+  st('m-i-s', i>45?'⚠ corriente alta':'✓ dentro del rango');
+  st('m-f', f.toFixed(2));
+  st('m-f-s', (f<49.5||f>50.5)?'⚠ fuera de rango':'✓ 50 Hz nominal');
+  st('m-fp', fp.toFixed(2));
+  st('m-fp-s', fp<0.80?'⚠ muy bajo — penalización':fp<0.85?'⚠ bajo — conviene mejorar':'✓ aceptable');
+  document.getElementById('b-fp').style.width = (fp*100).toFixed(0)+'%';
+
+  /* hoy */
+  const fecha = now.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'});
+  st('fecha-hoy', fecha);
+  st('hoy-kwh',   accKwhHoy.toFixed(2));
+  st('hoy-est',   estFin.toFixed(1)+' kWh');
+  st('hoy-pesos', fmt$(pesosHoy));
+  st('hoy-est-pesos', 'est. '+fmt$(pesosEstFin)+' al cierre');
+
+  /* costo card */
+  st('cc-mes',     fmt$(pesosMesAhora));
+  st('cc-mes-sub', kwhMesAhora.toFixed(1)+' kWh acumulados este mes');
+  st('cc-hoy',     fmt$(pesosHoy));
+  st('cc-acum',    fmt$(pesosMesAhora));
+  st('cc-proj',    fmt$(pesosProyMes));
+  st('cc-fp',      fp.toFixed(2)+(fp<0.85?' ⚠':' ✓'));
+
+  /* meses */
+  renderMeses(accKwhHoy);
+
+  /* chart */
+  bufPot.shift(); bufPot.push(kw);
+  chartPot.data.datasets[0].data = [...bufPot];
+  const minY = Math.max(0, Math.min(...bufPot)-.8);
+  const maxY = Math.max(...bufPot)+.8;
+  chartPot.options.scales.y.min = +minY.toFixed(1);
+  chartPot.options.scales.y.max = +maxY.toFixed(1);
+  chartPot.update();
+}
+
+tick();
+setInterval(tick, 1000);
+</script>
+</body>
+</html>
